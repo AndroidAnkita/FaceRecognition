@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="20dp"
+    android:background="@drawable/bg_dialog_round"
+    android:gravity="center">
+
+    <!-- Title -->
+    <TextView
+        android:id="@+id/dlg_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Add Face"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        android:textColor="#000"
+        android:layout_marginBottom="12dp"
+        tools:text="Add Face" />
+
+
+    <!-- Face Image -->
+    <ImageView
+        android:id="@+id/dlg_image"
+        android:layout_width="180dp"
+        android:layout_height="180dp"
+        android:layout_marginBottom="16dp"
+        android:scaleType="centerCrop"
+        android:background="@drawable/bg_image_round"
+        android:clipToOutline="true"
+        android:src="@drawable/ic_baseline_image_24" />
+
+    <!-- Name Input -->
+    <EditText
+        android:id="@+id/dlg_input"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:hint="Enter name"
+        android:padding="10dp"
+        android:textSize="16sp"
+        android:background="@drawable/bg_edittext"
+        android:inputType="textPersonName"
+        tools:hint="Enter name" />
+
+</LinearLayout>
