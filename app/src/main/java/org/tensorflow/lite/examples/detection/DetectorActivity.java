@@ -16,6 +16,7 @@
 
 package org.tensorflow.lite.examples.detection;
 
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.graphics.Bitmap;
@@ -41,6 +42,9 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.mlkit.vision.common.InputImage;
@@ -50,10 +54,16 @@ import com.google.mlkit.vision.face.FaceDetector;
 import com.google.mlkit.vision.face.FaceDetectorOptions;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Executors;
 
+import org.tensorflow.lite.examples.detection.Attendancedatabase.AttendanceDetails;
+import org.tensorflow.lite.examples.detection.Attendancedatabase.AttendanceEntity;
+import org.tensorflow.lite.examples.detection.adapter.AttendanceAdapter;
 import org.tensorflow.lite.examples.detection.customview.OverlayView;
 import org.tensorflow.lite.examples.detection.customview.OverlayView.DrawCallback;
 import org.tensorflow.lite.examples.detection.database.AppDatabase;
@@ -72,18 +82,11 @@ import org.tensorflow.lite.examples.detection.tracking.MultiBoxTracker;
 public class DetectorActivity extends CameraActivity implements OnImageAvailableListener {
   private static final Logger LOGGER = new Logger();
 
-
-  // FaceNet
-//  private static final int TF_OD_API_INPUT_SIZE = 160;
-//  private static final boolean TF_OD_API_IS_QUANTIZED = false;
-//  private static final String TF_OD_API_MODEL_FILE = "facenet.tflite";
-//  //private static final String TF_OD_API_MODEL_FILE = "facenet_hiroki.tflite";
-
   // MobileFaceNet
   private static final int TF_OD_API_INPUT_SIZE = 112;
   private static final boolean TF_OD_API_IS_QUANTIZED = false;
   private static final String TF_OD_API_MODEL_FILE = "mobile_face_net.tflite";
-
+  private String lastDetectedUsername;
 
   private static final String TF_OD_API_LABELS_FILE = "file:///android_asset/labelmap.txt";
 
@@ -95,32 +98,22 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   private static final Size DESIRED_PREVIEW_SIZE = new Size(640, 480);
   //private static final int CROP_SIZE = 320;
   //private static final Size CROP_SIZE = new Size(320, 320);
-
-
   private static final boolean SAVE_PREVIEW_BITMAP = false;
   private static final float TEXT_SIZE_DIP = 10;
   OverlayView trackingOverlay;
   private Integer sensorOrientation;
-
   private SimilarityClassifier detector;
-
   private long lastProcessingTimeMs;
   private Bitmap rgbFrameBitmap = null;
   private Bitmap croppedBitmap = null;
   private Bitmap cropCopyBitmap = null;
-
   private boolean computingDetection = false;
   private boolean addPending = false;
   //private boolean adding = false;
-
   private long timestamp = 0;
-
   private Matrix frameToCropTransform;
   private Matrix cropToFrameTransform;
-  //private Matrix cropToPortraitTransform;
-
   private MultiBoxTracker tracker;
-
   private BorderedText borderedText;
 
   // Face detector
@@ -128,7 +121,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
   private Bitmap portraitBmp = null;
   private Bitmap faceBmp = null;
-
+  RecyclerView rvAttendance;
   private FloatingActionButton fabAdd;
 
   //private HashMap<String, Classifier.Recognition> knownFaces = new HashMap<>();
@@ -140,9 +133,25 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
 
     fabAdd = findViewById(R.id.fab_add);
+    TextView tvAttendance = findViewById(R.id.tv_attendance_status);
+     rvAttendance = findViewById(R.id.rvAttendance);
+    rvAttendance = findViewById(R.id.rvAttendance);
+    rvAttendance.setLayoutManager(
+            new LinearLayoutManager(this)
+    );
+
+    loadAttendanceList();
     fabAdd.setOnClickListener(new View.OnClickListener() {
       @Override
       public void onClick(View view) {
+        if (!fabAdd.isEnabled()) {
+          Toast.makeText(
+                  DetectorActivity.this,
+                  "Attendance already marked",
+                  Toast.LENGTH_SHORT
+          ).show();
+          return;
+        }
         onAddClick();
       }
     });
@@ -157,18 +166,13 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
 
     FaceDetector detector = FaceDetection.getClient(options);
-
     faceDetector = detector;
-
-
     //checkWritePermission();
 
   }
 
 
-
   private void onAddClick() {
-
     addPending = true;
     //Toast.makeText(this, "click", Toast.LENGTH_LONG ).show();
 
@@ -218,8 +222,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     if (sensorOrientation == 90 || sensorOrientation == 270) {
       targetH = previewWidth;
       targetW = previewHeight;
-    }
-    else {
+    } else {
       targetW = previewWidth;
       targetH = previewHeight;
     }
@@ -252,7 +255,6 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                     previewWidth, previewHeight,
                     targetW, targetH,
                     sensorOrientation, MAINTAIN_ASPECT);
-
 
 
     trackingOverlay = (OverlayView) findViewById(R.id.tracking_overlay);
@@ -400,16 +402,16 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     ivFace.setImageBitmap(rec.getCrop());
     etName.setHint("Input name");
 
-    builder.setPositiveButton("OK", new DialogInterface.OnClickListener(){
+    builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
       @Override
       public void onClick(DialogInterface dlg, int i) {
 
-          String name = etName.getText().toString();
-          if (name.isEmpty()) {
-              return;
-          }
-          detector.register(name, rec);
-          //knownFaces.put(name, rec);
+        String name = etName.getText().toString();
+        if (name.isEmpty()) {
+          return;
+        }
+        detector.register(name, rec);
+        //knownFaces.put(name, rec);
 
 // DATABASE SAVE
         float[][] emb = (float[][]) rec.getExtra();
@@ -438,11 +440,11 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
 
     if (mappedRecognitions.size() > 0) {
-       LOGGER.i("Adding results");
-       SimilarityClassifier.Recognition rec = mappedRecognitions.get(0);
-       if (rec.getExtra() != null) {
-         showAddFaceDialog(rec);
-       }
+      LOGGER.i("Adding results");
+      SimilarityClassifier.Recognition rec = mappedRecognitions.get(0);
+      if (rec.getExtra() != null) {
+        showAddFaceDialog(rec);
+      }
 
     }
 
@@ -519,6 +521,11 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         RectF faceBB = new RectF(boundingBox);
         transform.mapRect(faceBB);
 
+        faceBB.left = Math.max(0, faceBB.left);
+        faceBB.top = Math.max(0, faceBB.top);
+        faceBB.right = Math.min(portraitBmp.getWidth(), faceBB.right);
+        faceBB.bottom = Math.min(portraitBmp.getHeight(), faceBB.bottom);
+
         // translates portrait to origin and scales to fit input inference size
         //cv.drawRect(faceBB, paint);
         float sx = ((float) TF_OD_API_INPUT_SIZE) / faceBB.width();
@@ -538,13 +545,19 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
         Bitmap crop = null;
 
         if (add) {
-          crop = Bitmap.createBitmap(portraitBmp,
-                            (int) faceBB.left,
-                            (int) faceBB.top,
-                            (int) faceBB.width(),
-                            (int) faceBB.height());
-        }
 
+          int x = Math.max(0, (int) faceBB.left);
+          int y = Math.max(0, (int) faceBB.top);
+
+          int w = Math.min((int) faceBB.width(), portraitBmp.getWidth() - x);
+          int h = Math.min((int) faceBB.height(), portraitBmp.getHeight() - y);
+
+          if (w > 0 && h > 0) {
+            crop = Bitmap.createBitmap(portraitBmp, x, y, w, h);
+          } else {
+            crop = null;
+          }
+        }
         final long startTime = SystemClock.uptimeMillis();
         final List<SimilarityClassifier.Recognition> resultsAux = detector.recognizeImage(faceBmp, add);
         lastProcessingTimeMs = SystemClock.uptimeMillis() - startTime;
@@ -566,14 +579,25 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
             label = result.getTitle();
             if (result.getId().equals("0")) {
               color = Color.GREEN;
-            }
-            else {
+            } else {
               color = Color.RED;
             }
+            resetUIForNewFace(label);
+            checkTodayAttendance(label);
+            markAttendanceOnce(label);
+          } else {
+            lastDetectedUsername = null;
+
+            runOnUiThread(() -> {
+              TextView tvAttendance =
+                      findViewById(R.id.tv_attendance_status);
+              tvAttendance.setText("Unregistered face detected");
+              tvAttendance.setTextColor(Color.GRAY);
+              fabAdd.setEnabled(true);
+              fabAdd.setAlpha(1f);
+            });
           }
-
         }
-
         if (getCameraFacing() == CameraCharacteristics.LENS_FACING_FRONT) {
 
           // camera is frontal so the image is flipped horizontally
@@ -581,50 +605,42 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
           Matrix flip = new Matrix();
           if (sensorOrientation == 90 || sensorOrientation == 270) {
             flip.postScale(1, -1, previewWidth / 2.0f, previewHeight / 2.0f);
-          }
-          else {
+          } else {
             flip.postScale(-1, 1, previewWidth / 2.0f, previewHeight / 2.0f);
           }
           //flip.postScale(1, -1, targetW / 2.0f, targetH / 2.0f);
           flip.mapRect(boundingBox);
 
         }
-
         final SimilarityClassifier.Recognition result = new SimilarityClassifier.Recognition(
                 "0", label, confidence, boundingBox);
-
         result.setColor(color);
         result.setLocation(boundingBox);
         result.setExtra(extra);
-        result.setCrop(crop);
+        //result.setCrop(crop);
+        if (crop != null) {
+          result.setCrop(crop);
+        }
         mappedRecognitions.add(result);
 
       }
-
-
     }
-
     //    if (saved) {
 //      lastSaved = System.currentTimeMillis();
 //    }
-
     updateResults(currTimestamp, mappedRecognitions);
 
 
   }
 
   private void loadFacesFromDatabase() {
-
     Executors.newSingleThreadExecutor().execute(() -> {
-
       List<UserEntity> users =
               AppDatabase.getInstance(getApplicationContext())
                       .userDao()
                       .getAllUsers();
 
-
       runOnUiThread(() -> {
-
         for (UserEntity user : users) {
 
           float[][] emb =
@@ -635,16 +651,117 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
                           "0", user.name, 0f, null);
 
           rec.setExtra(emb);
-
           if (detector != null) {
             detector.register(user.name, rec);
           }
         }
-
         Log.d("FACE_DB", "Faces reloaded from DB: " + users.size());
+      });
+    });
+  }
+
+  public void markAttendanceOnce(String username) {
+    Executors.newSingleThreadExecutor().execute(() -> {
+      AppDatabase db = AppDatabase.getInstance(this);
+      UserEntity user = db.userDao().getUserByName(username);
+      if (user == null) return;
+      String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+      Log.d("TAG", "today=" + today);
+      int already = db.attendanceDao().isAttendanceMarked(user.id, today);
+
+      if (already == 0) {
+        String time = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
+        db.attendanceDao().insert(new AttendanceEntity(user.id, today, time));
+
+        runOnUiThread(() ->
+                Toast.makeText(
+                        this,
+                        "Attendance marked: " + username,
+                        Toast.LENGTH_SHORT
+                ).show());
+        checkTodayAttendance(username);
+      }
+    });
+  }
+
+  @SuppressLint("SetTextI18n")
+  private void checkTodayAttendance(String username) {
+    Executors.newSingleThreadExecutor().execute(() -> {
+      AppDatabase db = AppDatabase.getInstance(this);
+      UserEntity user = db.userDao().getUserByName(username);
+      if (user == null) return;
+      String today = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(new Date());
+      int already = db.attendanceDao().isAttendanceMarked(user.id, today);
+      runOnUiThread(() -> {
+        TextView tvAttendance = findViewById(R.id.tv_attendance_status);
+        if (already > 0) {
+          tvAttendance.setText("Attendance already marked");
+          tvAttendance.setTextColor(Color.GREEN);
+          fabAdd.setEnabled(false);
+          fabAdd.setAlpha(0.5f);
+        } else {
+          tvAttendance.setText("Attendance not marked");
+          tvAttendance.setTextColor(Color.RED);
+          fabAdd.setEnabled(true);
+          fabAdd.setAlpha(1f);
+        }
+      });
+
+    });
+
+  }
+
+  @Override
+  public void onResume() {
+    super.onResume();
+    if (lastDetectedUsername != null) {
+      checkTodayAttendance(lastDetectedUsername);
+    }
+  }
+
+  @SuppressLint("SetTextI18n")
+  private void resetUIForNewFace(String newUsername) {
+    if (lastDetectedUsername == null ||
+            !lastDetectedUsername.equals(newUsername)) {
+      lastDetectedUsername = newUsername;
+
+      runOnUiThread(() -> {
+        TextView tvAttendance =
+                findViewById(R.id.tv_attendance_status);
+
+        tvAttendance.setText("Checking attendance...");
+        tvAttendance.setTextColor(Color.GRAY);
+
+        fabAdd.setEnabled(true);
+        fabAdd.setAlpha(1f);
+      });
+    }
+  }
+  private void loadAttendanceList() {
+    Executors.newSingleThreadExecutor().execute(() -> {
+
+      AppDatabase db = AppDatabase.getInstance(getApplicationContext());
+      List<AttendanceDetails> list = db.attendanceDao().getAttendanceDetails();
+
+      runOnUiThread(() -> {
+        if (list == null || list.isEmpty()) {
+          Toast.makeText(
+                  DetectorActivity.this,
+                  "No attendance found",
+                  Toast.LENGTH_SHORT
+          ).show();
+        } else {
+          AttendanceAdapter adapter = new AttendanceAdapter(list);
+          rvAttendance.setAdapter(adapter);
+        }
       });
     });
   }
 
 
 }
+
+
+
+
+

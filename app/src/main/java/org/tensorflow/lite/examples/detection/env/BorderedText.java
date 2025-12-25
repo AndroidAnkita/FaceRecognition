@@ -125,4 +125,7 @@ public class BorderedText {
     interiorPaint.setTextAlign(align);
     exteriorPaint.setTextAlign(align);
   }
+
+
+
 }
