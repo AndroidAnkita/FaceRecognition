@@ -16,9 +16,12 @@
 
 package org.tensorflow.lite.examples.detection;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.graphics.Canvas;
@@ -30,8 +33,12 @@ import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.hardware.camera2.CameraCharacteristics;
 import android.media.ImageReader.OnImageAvailableListener;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 import android.util.Size;
 import android.util.TypedValue;
@@ -42,6 +49,8 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -123,7 +132,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   private Bitmap faceBmp = null;
   RecyclerView rvAttendance;
   private FloatingActionButton fabAdd;
-
+  private static final String ADDRESS = "a8:88:1f:6e:7f:d7";
   //private HashMap<String, Classifier.Recognition> knownFaces = new HashMap<>();
 
 
@@ -131,7 +140,25 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
 
+    if(ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)!= PackageManager.PERMISSION_GRANTED){
+      ActivityCompat.requestPermissions(this,new String[]{
+              Manifest.permission.ACCESS_FINE_LOCATION},101);
+    }
 
+    if (WiFiConnected()) {
+      Toast.makeText(this, "true", Toast.LENGTH_SHORT).show();
+    } else {
+      Toast.makeText(this, "false", Toast.LENGTH_SHORT).show();
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      if (!Settings.canDrawOverlays(getApplicationContext())) {
+        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+      }
+    }
+    // startLockTask();
+
+    hideSystemUI();
     fabAdd = findViewById(R.id.fab_add);
     TextView tvAttendance = findViewById(R.id.tv_attendance_status);
      rvAttendance = findViewById(R.id.rvAttendance);
@@ -397,20 +424,22 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     ImageView ivFace = dialogLayout.findViewById(R.id.dlg_image);
     TextView tvTitle = dialogLayout.findViewById(R.id.dlg_title);
     EditText etName = dialogLayout.findViewById(R.id.dlg_input);
+    EditText etRole = dialogLayout.findViewById(R.id.dlgrole);
 
     tvTitle.setText("Add Face");
     ivFace.setImageBitmap(rec.getCrop());
     etName.setHint("Input name");
-
+    etRole.setHint("Input Role");
     builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
       @Override
       public void onClick(DialogInterface dlg, int i) {
 
         String name = etName.getText().toString();
+        String role = etRole.getText().toString();
         if (name.isEmpty()) {
           return;
         }
-        detector.register(name, rec);
+        detector.register(name,role, rec);
         //knownFaces.put(name, rec);
 
 // DATABASE SAVE
@@ -652,7 +681,7 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
 
           rec.setExtra(emb);
           if (detector != null) {
-            detector.register(user.name, rec);
+            detector.register(user.name,"", rec);
           }
         }
         Log.d("FACE_DB", "Faces reloaded from DB: " + users.size());
@@ -758,6 +787,36 @@ public class DetectorActivity extends CameraActivity implements OnImageAvailable
     });
   }
 
+  private boolean WiFiConnected() {
+    WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+    if (wifiManager == null || !wifiManager.isWifiEnabled()) {
+      return false;
+    }
+    WifiInfo info = wifiManager.getConnectionInfo();
+    if (info == null) {
+      return false;
+    }
+    String bssid = info.getBSSID();
+    String ssid = info.getSSID();
+    String macaddress = info.getMacAddress();
+    Log.d("WIFI", "ConnectedID = " + bssid + "Connectedssid=" + ssid + "Connectedmacaddress=" + macaddress);
+    Log.d("WIFI", "bssid = " + bssid);
+    Log.d("WIFI", "ssid = " + ssid);
+    Log.d("WIFI", "macaddress = " + macaddress);
+
+    return ADDRESS.equals(bssid);
+  }
+
+  private void hideSystemUI() {
+    getWindow().getDecorView().setSystemUiVisibility(
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+    );
+  }
 
 }
 

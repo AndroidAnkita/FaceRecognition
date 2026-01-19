@@ -22,7 +22,7 @@ import java.util.List;
 /** Generic interface for interacting with different recognition engines. */
 public interface SimilarityClassifier {
 
-  void register(String name, Recognition recognition);
+  void register(String name, String role,Recognition recognition);
 
   List<Recognition> recognizeImage(Bitmap bitmap, boolean getExtra);
 

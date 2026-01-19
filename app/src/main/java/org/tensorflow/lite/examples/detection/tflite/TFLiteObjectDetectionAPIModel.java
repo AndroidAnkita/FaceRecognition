@@ -94,7 +94,7 @@ public abstract class TFLiteObjectDetectionAPIModel
   private float[][] output;
 
   private HashMap<String, Recognition> registered = new HashMap<>();
-  public void register(String name, Recognition rec) {
+  public void register(String name,String role, Recognition rec) {
       registered.put(name, rec);
   }
 
